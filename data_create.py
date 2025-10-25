@@ -193,7 +193,7 @@ class systemParameter:
 
 if __name__ == "__main__":
     #测试代码
-    BS = BSparameter(6, 6, 100, np.array([0,0,0]))
+    BS = BSparameter(6, 6, 100, np.array([0,0,20]))
     TA = TAparameter(5, np.array([0,180]), np.array([-30,-30]))
     IN = INparameter(3, np.array([0,180]), np.array([-30,-30]))
     UU = UUparameter(4, 10, np.array([[0,100],[0,100],[0,10]]))
