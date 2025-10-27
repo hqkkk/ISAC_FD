@@ -144,7 +144,6 @@ class systemParameter:
         :param TA: TAparameter实例
         :param IN: INparameter实例
         :param UU: UUparameter实例
-        :param DU: DUparameter实例
         """
         self.BS = BS
         self.TA = TA
