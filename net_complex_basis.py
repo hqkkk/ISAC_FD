@@ -17,6 +17,7 @@ class linear(nn.Module):
         if(bias == True):
             self.fc.bias = nn.Parameter(torch.randn(out_size, dtype=torch.complex64))
     def forward(self, x):
+        x=x+0j
         if(self.bias == True):
             x = x + self.fc.bias
             return x
@@ -57,6 +58,8 @@ class sigmoid(nn.Module):
 class NaiveComplexBatchNorm1d(nn.Module):
     """
     朴素复数批归一化：分别对实部和虚部进行归一化
+    输入: (batch, sequence, features)
+    输出: (batch, sequence, features)
     """
     def __init__(self, num_features, eps=1e-5, momentum=0.1):
         super().__init__()
@@ -97,8 +100,19 @@ class resnet(nn.Module):
         super().__init__()
         self.linear = linear(feature_prex, feature_postx)
     def forward(self, x, deltax):
-        return self.linear(x) + deltax
+        x=self.linear(x)
+        return x + deltax
 
+class abs(nn.Module):
+    '''
+    复数取模层
+    输入:(batch, sequence, feature)
+    '''
+    def __init__(self):
+        super().__init__()
+    def forward(self, x):
+        x = torch.abs(x)
+        return x
 
 if __name__ == "__main__":
     print("net_complex_basis模块测试")
