@@ -5,10 +5,11 @@ import torch.nn as nn
 
 class InitailLayer(nn.Module):
     def __init__(self, embed_dim, num_trans, num_rece):
+        super().__init__()
         self.UUInit = nn.Sequential(
-            nn.Linear(num_rece*2, embed_dim*2),
+            nn.Linear(num_rece*2+1, embed_dim*2),
             nn.ReLU(),
-            nn.Linear(embed_dim*2, embed_dim*2),
+            nn.Linear(embed_dim*2+1, embed_dim*2),
             nn.ReLU()
         )
         self.DUInit = nn.Sequential(

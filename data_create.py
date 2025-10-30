@@ -1,12 +1,12 @@
 import os
 import numpy as np
 import pandas as pd
-
-def CSI_CI_generate(locatMat1, locatMat2, num):
+import torch
+import torch.nn as nn
+from torch.utils.data import TensorDataset, DataLoader
+def CSI_CI_generate(locatMat1, locatMat2):
     '''
-    生成CSI矩阵,瑞利衰落信道模型
-    输出：num X locatMat1.shape[1]的矩阵
-        每列对应一个用户的CSI
+    UU和DU之间相互干扰的CSI矩阵
     '''
     location1 = locatMat1.T[:, np.newaxis, :]  # Shape: (UUnum, 1, 3)
     location2 = locatMat2.T[np.newaxis, :, :]  # Shape: (1, DUnum, 3)
@@ -99,9 +99,6 @@ class UUparameter:
         self.CSIMat = None
         self.locatMat = None
     def random(self):
-        '''
-        随机生成UU参数
-        '''
         self.powerBudgetArr=np.full(self.num, self.powerBudget)
         locatMat = np.stack([np.random.uniform(self.xlocatRange[0], self.xlocatRange[1], self.num),
                                  np.random.uniform(self.ylocatRange[0], self.ylocatRange[1], self.num),
@@ -124,9 +121,6 @@ class DUparameter:
         self.locatMat = None
         self.CSImat = None
     def random(self):
-        '''
-        随机生成DU参数
-        '''
         locatMat = np.stack([np.random.uniform(self.xlocatRange[0], self.xlocatRange[1], self.num),
                                  np.random.uniform(self.ylocatRange[0], self.ylocatRange[1], self.num),
                                  np.random.uniform(self.zlocatRange[0], self.zlocatRange[1], self.num)],
@@ -137,14 +131,6 @@ class DUparameter:
         print(self.__dict__)
 class systemParameter:
     def __init__(self, BS:BSparameter, TA:TAparameter, IN:INparameter, UU:UUparameter, DU:DUparameter):
-        """
-        初始化系统参数，包含所有子组件参数
-        直接传入已实例化的组件对象
-        :param BS: BSparameter实例
-        :param TA: TAparameter实例
-        :param IN: INparameter实例
-        :param UU: UUparameter实例
-        """
         self.BS = BS
         self.TA = TA
         self.IN = IN
@@ -154,51 +140,86 @@ class systemParameter:
         self.noise2DI = None
         self.noise2BS = None
     def random(self):
-        """为所有组件生成随机参数"""
         self.TA.random()
         self.IN.random()
         self.UU.random()
         self.DU.random()
     def envParaSet(self, noise2DI, noise2BS):
-        '''
-        设置环境参数
-        '''
         self.noise2DI = noise2DI
         self.noise2BS = noise2BS
-
     def data_create(self):
         '''
         生成随机场景数据
         '''
+        self.TA.random()
+        self.IN.random()
+        self.UU.random()
+        self.DU.random()
         #UU的CSI矩阵 
-        self.UU.CSIMat = CSI_generate(self.UU.locatMat, self.BS.location, self.BS.num_rece)
+        UUCSIMat = CSI_generate(self.UU.locatMat, self.BS.location, self.BS.num_rece)
         #DU的CSI矩阵
-        self.DU.CSIMat = CSI_generate(self.DU.locatMat, self.BS.location, self.BS.num_trans)
+        DUMat = CSI_generate(self.DU.locatMat, self.BS.location, self.BS.num_trans)
         #CI矩阵,其中CIMat[i,j]表示第i个DU与第j个UU之间的CSI
-        self.CIMat = CSI_CI_generate(self.UU.locatMat, self.DU.locatMat, self.DU.num)
-    def info(self):
-        print(self.__dict__)
-        print("BS\n")
-        BS.info()
-        print("TA\n")
-        TA.info()
-        print("IN\n")
-        IN.info()
-        print("UU\n")
-        UU.info()
-        print("DU\n")
-        DU.info()
+        CIMat = CSI_CI_generate(self.UU.locatMat, self.DU.locatMat)
+        UUCSIMat = torch.from_numpy(UUCSIMat).type(torch.complex64)
+        UUPower = torch.from_numpy(self.UU.powerBudgetArr).type(torch.complex64)
+        UUMat = torch.cat([UUCSIMat, UUPower.unsqueeze(0)], dim=0)#?
+        DUMat = torch.from_numpy(DUMat).type(torch.complex64)
+        CIMat = torch.from_numpy(CIMat).type(torch.complex64)
+        INMat = torch.from_numpy(np.stack([self.IN.angleArr, self.IN.powerGainArr], axis=1)).type(torch.complex64)
+        TAMat = torch.from_numpy(np.stack([self.TA.angleArr, self.TA.powerGainArr], axis=1)).type(torch.complex64)
+        return (UUMat, DUMat, INMat, TAMat, CIMat)
 
+uu_list, du_list, in_list, ta_list, ci_list = [], [], [], [], []
+def generate_samples(num_samples: int, MAT):
+    for i in range(num_samples):
+        global uu_list, du_list, in_list, ta_list, ci_list
+        UUMat, DUMat, INMat, TAMat, CIMat = MAT
+        
+        # 收集到各自的列表中
+        uu_list.append(UUMat)
+        du_list.append(DUMat)
+        in_list.append(INMat)
+        ta_list.append(TAMat)
+        ci_list.append(CIMat)
+    uu_list = torch.stack(uu_list, axis=0)
+    du_list = torch.stack(du_list, axis=0)
+    in_list = torch.stack(in_list, axis=0)
+    ta_list = torch.stack(ta_list, axis=0)
+    ci_list = torch.stack(ci_list, axis=0)
+    print(uu_list.shape,du_list.shape,in_list.shape,ta_list.shape,ci_list.shape)
+    return uu_list, du_list, in_list, ta_list, ci_list
+
+def save_unsupervised_dataset(MAT,data_path="unsupervised_dataset", num_samples=1000, 
+                             num_trans=4, num_rece=4, embed_dim=16):
+    """保存无监督数据集到文件"""
+    os.makedirs(data_path, exist_ok=True)
+    
+    UUMat, DUMat, INMat, TAMat, CIMat = MAT
+    print(UUMat.shape,DUMat.shape,INMat.shape,TAMat.shape,CIMat.shape)
+    dataset = TensorDataset(UUMat, DUMat, INMat, TAMat, CIMat)
+    
+    torch.save(dataset, os.path.join(data_path, "dataset.pt"))
+    
+    data_info = {
+        'num_samples': num_samples,
+        'num_trans': num_trans,
+        'num_rece': num_rece,
+        'embed_dim': embed_dim
+    }
+    torch.save(data_info, os.path.join(data_path, "data_info.pt"))
+    
+    print(f"无监督数据集已保存到 {data_path}")
+    print(f"数据集大小: {len(dataset)}")
+    
+    return dataset
 
 if __name__ == "__main__":
     #测试代码
-    BS = BSparameter(6, 6, 100, np.array([0,0,20]))
+    BS = BSparameter(4, 4, 100, np.array([0,0,20]))
     TA = TAparameter(5, np.array([0,180]), np.array([-30,-30]))
     IN = INparameter(3, np.array([0,180]), np.array([-30,-30]))
     UU = UUparameter(4, 10, np.array([[0,100],[0,100],[0,10]]))
     DU = DUparameter(4, np.array([[0,100],[0,100],[0,10]]))
-    BS.info()
     system = systemParameter(BS,TA,IN,UU,DU)
-    system.random()
-    system.data_create()
-    print(system.__dict__)
+    save_unsupervised_dataset(generate_samples(1000, system.data_create()))
