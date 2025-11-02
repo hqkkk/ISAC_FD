@@ -114,6 +114,7 @@ class abs(nn.Module):
         x = torch.abs(x)
         return x
 
+
 if __name__ == "__main__":
     print("net_complex_basis模块测试")
     tensor_3d = (torch.rand(3, 3, 3)*2-1)+1j*(torch.rand(3, 3, 3)*2-1)
