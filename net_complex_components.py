@@ -14,8 +14,6 @@ class MultiheadAttention(nn.Module):
     '''
     def __init__(self, dim_qk, dim_v, num_heads, batch_first=True):
         super().__init__()
-        if(batch_first == False):
-            raise ValueError("Only support batch_first=True")
         self.WQ = ncb.linear(dim_qk, num_heads*dim_qk)
         self.WK = ncb.linear(dim_qk, num_heads*dim_qk)
         self.WV = ncb.linear(dim_v, num_heads*dim_v)
@@ -26,10 +24,6 @@ class MultiheadAttention(nn.Module):
         batch_size, Qnum, Qdim = query.size()
         batch_size, Knum, Kdim = key.size()
         batch_size, Vnum, dim = value.size()
-        if(Qdim != Kdim):
-            raise ValueError("Qdim must be equal to Kdim")
-        if(Knum != Vnum):
-            raise ValueError("Knum must be equal to Vnum")
         Q = self.WQ(query).view(batch_size, Qnum, self.num_heads, self.dk).permute(0, 2, 1, 3)
         K = self.WK(key).view(batch_size, Knum, self.num_heads, self.dk).permute(0, 2, 3, 1)  # 这里完成转置
         V = self.WV(value).view(batch_size, Vnum, self.num_heads, self.dim_v).permute(0, 2, 1, 3)

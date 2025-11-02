@@ -77,40 +77,21 @@ def train(args):
 
     # Convert scalar noise/alpha values to indexable tensors if necessary
     # noise2DU -> shape (batch, L, 1)
-    if isinstance(noise2DU, torch.Tensor):
-        noise2DU = noise2DU.to(device)
-        if noise2DU.numel() == 1:
-            noise2DU = noise2DU.view(1, 1, 1).expand(batch_size, DUMat.shape[1], 1).contiguous()
-        elif noise2DU.dim() == 2 and noise2DU.shape[0] == DUMat.shape[1]:
-            noise2DU = noise2DU.unsqueeze(0).expand(batch_size, -1, -1).contiguous()
-        elif noise2DU.dim() == 1 and noise2DU.shape[0] == DUMat.shape[1]:
-            noise2DU = noise2DU.view(1, DUMat.shape[1], 1).expand(batch_size, -1, -1).contiguous()
-    elif isinstance(noise2DU, (float, int)):
-        noise2DU = torch.full((batch_size, DUMat.shape[1], 1), float(noise2DU), dtype=torch.float32, device=device)
-    else:
-        print("error: noise2DU is neither tensor nor scalar")
+    noise2DU = torch.full((batch_size, DUMat.shape[1], 1), float(noise2DU), dtype=torch.float32, device=device)
 
     # noise2BS -> shape (batch,1,1)
-    if isinstance(noise2BS, torch.Tensor):
-        noise2BS = noise2BS.to(device)
-        if noise2BS.numel() == 1:
-            noise2BS = noise2BS.view(1, 1, 1).expand(batch_size, -1, -1).contiguous()
-    elif isinstance(noise2BS, (float, int)):
-        noise2BS = torch.full((batch_size, 1, 1), float(noise2BS), dtype=torch.float32, device=device)
-    else:
-        print("error: noise2BS is neither tensor nor scalar")
-
+    
+    noise2BS = torch.full((batch_size, 1, 1), float(noise2BS), dtype=torch.float32, device=device)
     # alpha_SI -> scalar tensor
-    if isinstance(alpha_SI, torch.Tensor):
-        alpha_SI = alpha_SI.to(device)
-    elif isinstance(alpha_SI, (float, int)):
-        alpha_SI = torch.tensor(float(alpha_SI), dtype=torch.float32, device=device)
-    else:
-        print("error: alpha_SI is neither tensor nor scalar")
+    alpha_SI = torch.tensor(float(alpha_SI), dtype=torch.float32, device=device)
+    
 
     dataset = SimpleDataset(UUMat, DUMat, INMat, TAMat, CIMat, noise2DU, noise2BS, alpha_SI)
     loader = DataLoader(dataset, batch_size=args.batch_size, shuffle=True)
-
+    # 添加统计代码在这里
+    print(f"数据集总样本数: {len(dataset)}, Batch大小: {args.batch_size}, 总batch数: {len(loader)}")
+    sample_batch = next(iter(loader))
+    print(f"实际batch中第一个张量的形状: {sample_batch[0].shape}, 样本数: {sample_batch[0].shape[0]}")
     # create model and loss
     model = netAll.netAll(num_trans, num_rece, args.num_heads, args.embed_dim).to(device)
     loss_fn = lossFunction.LossFunction(lambda1=args.lambda1)
@@ -136,38 +117,26 @@ def train(args):
             CIMat_b = CIMat_b.to(device)
             noise2DU_b = noise2DU_b.to(device)
             noise2BS_b = noise2BS_b.to(device)
-            # alpha_SI_b may be tensor or scalar per-sample; take first if needed
-            if isinstance(alpha_SI_b, torch.Tensor):
-                alpha_SI_val = alpha_SI_b[0] if alpha_SI_b.numel() > 1 else alpha_SI_b
-            else:
-                alpha_SI_val = alpha_SI_b
+            alpha_SI_val = alpha_SI_b[0] if alpha_SI_b.numel() > 1 else alpha_SI_b
 
             optimizer.zero_grad()
             # forward
-            try:
-                UUPowerMat, DUComMat, SensingMat = model(UUMat_b, DUMat_b, INMat_b, TAMat_b, CIMat_b)
-            except Exception as e:
-                print('Model forward failed:', e)
-                raise
-
+            UUPowerMat, DUComMat, SensingMat = model(UUMat_b, DUMat_b, INMat_b, TAMat_b, CIMat_b)
             loss = loss_fn(UUPowerMat, DUComMat, SensingMat,
                            UUMat_b, DUMat_b, TAMat_b, INMat_b,
                            CIMat_b, noise2DU_b, noise2BS_b, alpha_SI_val,
                            num_trans, num_rece)
-
             # backprop
             loss.backward()
             optimizer.step()
 
             epoch_loss += loss.item()
             iters += 1
-            if args.smoke:
-                break
-
+            
         avg_loss = epoch_loss / max(1, iters)
+        elapsed = time.time() - start_time
+        print(f'Epoch {epoch+1}/{args.epochs} Training finished in {elapsed:.1f}s')
         print(f'Epoch {epoch+1}/{args.epochs}  avg_loss={avg_loss:.6f}')
-        if args.smoke:
-            break
 
     elapsed = time.time() - start_time
     print(f'Training finished in {elapsed:.1f}s')
@@ -181,8 +150,8 @@ def train(args):
 
 def parse_args():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--epochs', type=int, default=2)
-    parser.add_argument('--batch-size', type=int, default=2)
+    parser.add_argument('--epochs', type=int, default=200)
+    parser.add_argument('--batch-size', type=int, default=2500)
     parser.add_argument('--lr', type=float, default=1e-3)
     parser.add_argument('--embed-dim', type=int, default=4)
     parser.add_argument('--num-trans', type=int, default=8)
@@ -190,8 +159,6 @@ def parse_args():
     parser.add_argument('--num-heads', type=int, default=2)
     parser.add_argument('--lambda1', type=float, default=0.1)
     parser.add_argument('--save-path', type=str, default='')
-    parser.add_argument('--smoke', action='store_true', help='run only a single batch and exit')
-    # dataset fallback sizes
     parser.add_argument('--num-uu', type=int, default=4)
     parser.add_argument('--num-du', type=int, default=3)
     parser.add_argument('--num-in', type=int, default=5)
