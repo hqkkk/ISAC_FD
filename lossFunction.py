@@ -25,7 +25,7 @@ def geta(angleArr, num):
     return a
 
 class LossFunction(nn.Module):
-    def __init__(self, lambda1=0.1):
+    def __init__(self, lambda1=100):
         super().__init__()
         self.lambda1 = lambda1
     def forward(self, UUPowerMat, DUComMat, SensingMat, 

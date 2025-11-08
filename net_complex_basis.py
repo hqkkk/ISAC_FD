@@ -94,13 +94,11 @@ class NaiveComplexBatchNorm1d(nn.Module):
 class resnet(nn.Module):
     '''
     残差连接模块
-    Y = W X + \delta X
+    Y = X + \delta X
     '''
-    def __init__(self, feature_prex, feature_postx):
+    def __init__(self, feature_prex=1, feature_postx=1):
         super().__init__()
-        self.linear = linear(feature_prex, feature_postx)
     def forward(self, x, deltax):
-        x=self.linear(x)
         return x + deltax
 
 class abs(nn.Module):

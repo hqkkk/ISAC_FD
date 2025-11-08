@@ -40,8 +40,9 @@ class UpdateLayer2UU(nn.Module):
             batch_first=True
         )
         self.CI_fuse = ncb.linear(embed_dim + 1, embed_dim)
-        self.resnet = ncb.resnet(embed_dim,embed_dim*num_heads*4)
-        self.post = ncc.complexpost(embed_dim*num_heads*4, embed_dim)
+        self.resnet = ncb.resnet()
+        self.Wo = ncb.linear(embed_dim*4, embed_dim)
+        self.post = ncc.complexpost(embed_dim, embed_dim)
     def forward(self, UUMat, DUMat, INMat, TAMat, CIMat):
         du2uuList = []
         #对每个UU节点单独聚合特征
@@ -80,6 +81,7 @@ class UpdateLayer2UU(nn.Module):
             need_weights=False
         )
         uuConcat = torch.cat([du2uu, ta2uu, uu2uu, in2uu], dim=2)
+        uuConcat = self.Wo(uuConcat)
         uumat = self.resnet(UUMat, uuConcat)
         UUMat = self.post(uumat)
         return UUMat
@@ -112,7 +114,8 @@ class UpdateLayer2DU(nn.Module):
         # 当将 CI 拼接到邻居节点特征后，使用 CI_fuse 将拼接后的维度映射回 embed_dim
         self.CI_fuse = ncb.linear(embed_dim + 1, embed_dim)
         self.resnet = ncb.resnet(embed_dim,embed_dim*num_heads*3)
-        self.post = ncc.complexpost(embed_dim*num_heads*3, embed_dim)
+        self.Wo = ncb.linear(embed_dim*3, embed_dim)
+        self.post = ncc.complexpost(embed_dim, embed_dim)
     def forward(self, UUMat, DUMat, TAMat, CIMat):
         uu2duList = []
         #对每个DU节点单独聚合特征
@@ -145,6 +148,7 @@ class UpdateLayer2DU(nn.Module):
             need_weights=False
         )
         duConcat = torch.cat([uu2du, ta2du, du2du], dim=2)
+        duConcat = self.Wo(duConcat)
         dumat = self.resnet(DUMat, duConcat)
         DUMat = self.post(dumat)
         return DUMat
@@ -175,7 +179,8 @@ class UpdateLayer2TA(nn.Module):
             num_heads=num_heads,
             batch_first=True
         )
-        self.post = ncc.complexpost(embed_dim*num_heads*3, embed_dim)
+        self.post = ncc.complexpost(embed_dim, embed_dim)
+        self.Wo = ncb.linear(embed_dim*3, embed_dim)
         self.resnet = ncb.resnet(embed_dim,embed_dim*num_heads*3)
     def forward(self, UUMat, DUMat, TAMat):
         du2ta = self.DU2TA(
@@ -197,6 +202,7 @@ class UpdateLayer2TA(nn.Module):
             need_weights=False
         )
         taConcat = torch.cat([uu2ta, du2ta, ta2ta], dim=2)
+        taConcat = self.Wo(taConcat)
         tamat = self.resnet(TAMat, taConcat)
         TAMat = self.post(tamat)
         return TAMat
@@ -213,7 +219,8 @@ class UpdateLayer2IN(nn.Module):
             num_heads=num_heads,
             batch_first=True
         )
-        self.post = ncc.complexpost(embed_dim*num_heads, embed_dim)
+        self.post = ncc.complexpost(embed_dim, embed_dim)
+        self.Wo = ncb.linear(embed_dim, embed_dim)
         self.resnet = ncb.resnet(embed_dim,embed_dim*num_heads)
     def forward(self, UUMat,INMat):
         uu2in = self.UU2IN(
@@ -223,6 +230,7 @@ class UpdateLayer2IN(nn.Module):
             need_weights=False
         )
         inConcat = uu2in
+        inConcat = self.Wo(inConcat)
         inmat = self.resnet(INMat, inConcat)
         INMat = self.post(inmat)
         return INMat

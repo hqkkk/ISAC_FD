@@ -17,6 +17,7 @@ class MultiheadAttention(nn.Module):
         self.WQ = ncb.linear(dim_qk, num_heads*dim_qk)
         self.WK = ncb.linear(dim_qk, num_heads*dim_qk)
         self.WV = ncb.linear(dim_v, num_heads*dim_v)
+        self.Wo = ncb.linear(num_heads*dim_v, dim_v)
         self.dk = dim_qk
         self.num_heads = num_heads
         self.dim_v = dim_v
@@ -32,7 +33,7 @@ class MultiheadAttention(nn.Module):
         attention_weight = F.softmax(attention_score, dim=-1) + 0*1j
 
         output = torch.matmul(attention_weight, V).permute(0, 2, 1, 3).reshape(batch_size, Qnum, self.num_heads*self.dim_v)
-
+        output = self.Wo(output)
         return output
 
 class DNN_3layer(nn.Module):

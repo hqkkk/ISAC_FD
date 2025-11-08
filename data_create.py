@@ -66,7 +66,7 @@ class TAparameter:
         '''
         随机生成TA参数
         '''
-        self.angleArr = np.random.uniform(self.angleRange, self.num)
+        self.angleArr = np.random.uniform(self.angleRange, self.num)#角度不要相距太近
         self.powerGainArr = np.random.uniform(self.powerGain, self.num)
         return self.angleArr, self.powerGainArr
         
@@ -254,12 +254,12 @@ if __name__ == "__main__":
     alpha_SI_dB = -110  # dB
     num_trans = 4
     num_rece = 4
-    power_BS = dBm2watt(18)  # 基站功率预算
+    power_BS = dBm2watt(18+30)  # 基站功率预算过大
     BSlocation_XYZ = np.array([0,20,0])
 
     ta_num = 2
     ta_angleRange = np.array([45,135])
-    #功率增益的平方
+    #功率增益的平方，增益随机生成即可
     ta_powerGainArr = np.full((ta_num),dB2linear(-30)*dB2linear(noise2BS_dBm))
     
     in_num = 2
@@ -267,7 +267,7 @@ if __name__ == "__main__":
     in_powerGainArr = np.full((in_num),dB2linear(20)*dB2linear(noise2BS_dBm))
     
     uu_num = 4
-    uu_powerBudget = dBm2watt(5)
+    uu_powerBudget = dBm2watt(5+30)#预算过大
     uu_locatRange = np.array([[0,100],[0,10],[0,100]])
     
     du_num = 4
