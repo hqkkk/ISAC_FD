@@ -15,7 +15,8 @@ class OutputUU(nn.Module):
             ncb.relu(),
             ncb.linear(embed_dim, embed_dim),
             ncb.relu(),
-            ncb.linear(embed_dim,1)
+            ncb.linear(embed_dim,1),
+            ncb.relu()
         )
         self.abs=ncb.abs()
     def forward(self,UUMat):

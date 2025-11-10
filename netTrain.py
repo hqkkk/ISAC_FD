@@ -147,7 +147,7 @@ def train(args):
     torch.save(ckpt, save_path)
     print('Saved checkpoint to', save_path)
 
-
+#设定参数
 def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument('--epochs', type=int, default=200)
@@ -157,12 +157,7 @@ def parse_args():
     parser.add_argument('--num-trans', type=int, default=8)
     parser.add_argument('--num-rece', type=int, default=6)
     parser.add_argument('--num-heads', type=int, default=2)
-    parser.add_argument('--lambda1', type=float, default=0.1)
-    parser.add_argument('--save-path', type=str, default='')
-    parser.add_argument('--num-uu', type=int, default=4)
-    parser.add_argument('--num-du', type=int, default=3)
-    parser.add_argument('--num-in', type=int, default=5)
-    parser.add_argument('--num-ta', type=int, default=2)
+    parser.add_argument('--lambda1', type=float, default=100)
     return parser.parse_args()
 
 

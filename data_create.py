@@ -5,12 +5,13 @@ import torch
 import torch.nn as nn
 from torch.utils.data import TensorDataset
 
-def dB2linear(dB):
-    return 10 ** (dB / 10)
 
 def dBm2watt(dbm):
     return 10 ** (dbm / 10)*1e-3
-
+def dBW2watt(dbW):
+    return 10 ** ((dbW+30) / 10)*1e-3
+def dB2linear(dB):
+    return 10 ** (dB / 10)
 def CSI_CI_generate(locatMat1, locatMat2):
     '''
     UU和DU之间相互干扰的CSI矩阵
@@ -23,6 +24,13 @@ def CSI_CI_generate(locatMat1, locatMat2):
     CSIMat = (RandomMat * (np.sqrt(10**(-3)*(distanceMat**-2.67))
                         ))
     return CSIMat
+def powerGain_create(num, distanceRange,test = True):
+    distanceArr = np.random.uniform(distanceRange[0], distanceRange[1], num)
+    RandomMat = (np.random.randn(num)
+                + 1j * np.random.randn(num))/np.sqrt(2)
+    powerGain=(RandomMat * (np.sqrt(10**(-3)*(distanceArr**-2.67))
+                            ))
+    return powerGain
 
 def CSI_generate(locatMat1, locateMat2, num):
     '''
@@ -54,20 +62,32 @@ class TAparameter:
     目标参数设置 num= real, angleRange = 1Darr(2), powerGainRange = 1Darr(2)
     返回值: angleArr = 1Darr(M), powerGainArr = 1Darr(M)
     '''
-    def __init__(self, num, angleRange, powerGainRange):
-        self.num = num
-        self.angleRange = angleRange
-        self.powerGain = powerGainRange
-        self.angleArr = None
-        self.powerGainArr = None
+    def __init__(self, num, angleRange, powerGainRange,ta_distanRange, setAngle = False):
+        if(setAngle):
+            self.num = num
+            self.angleArr = angleRange
+            self.powerGainArr = powerGainRange
+            self.setAngle = setAngle
+            self.distanceArr = ta_distanRange
+            self.powerGain = None
+        else:
+            self.num = num
+            self.angleRange = angleRange
+            self.powerGain = powerGainRange
+            self.setAngle = setAngle
+            self.angleArr = None
+            self.distanceArr = ta_distanRange
+            self.powerGainArr = None
     def info(self):
         print(self.__dict__)
     def random(self):
         '''
         随机生成TA参数
         '''
-        self.angleArr = np.random.uniform(self.angleRange, self.num)#角度不要相距太近
-        self.powerGainArr = np.random.uniform(self.powerGain, self.num)
+        if(self.setAngle):
+            return self.angleArr, self.powerGainArr
+        self.powerGainArr = powerGain_create(self.num, self.distanceArr)
+        self.angleArr =np.array([np.random.uniform(low, high) for low, high in self.angleRange])#角度不要相距太近
         return self.angleArr, self.powerGainArr
         
 class INparameter:
@@ -75,9 +95,18 @@ class INparameter:
     干扰参数设置 num= real, angleRange = 1Darr(2), powerGainRange = 1Darr(2)
     返回值: angleArr = 1Darr(M), powerGainArr = 1Darr(M)
     '''
-    def __init__(self, num, angleRange, powerGainArr):
-        self.num = num
-        self.angleRange = angleRange
+    def __init__(self, num, angleRange, powerGainArr, distanRange, setAngle = False):
+        if(setAngle):
+            self.num = num
+            self.angleArr = angleRange
+            self.setAngle = setAngle
+            self.distanceArr = distanRange
+        else:
+            self.num = num
+            self.angleRange = angleRange
+            self.setAngle = setAngle
+            self.angleArr = None
+            self.distanceArr = distanRange
         self.powerGainArr = powerGainArr
     def info(self):
         print(self.__dict__)
@@ -85,7 +114,11 @@ class INparameter:
         '''
         随机生成IN参数
         '''
-        self.angleArr = np.random.uniform(self.angleRange, self.num)
+        self.powerGainArr = powerGain_create(self.num, self.distanceArr)
+        if(self.setAngle):
+            pass
+        else:
+            self.angleArr = np.random.uniform(self.angleRange, self.num)
         return self.angleArr, self.powerGainArr
     
 class UUparameter:
@@ -173,7 +206,9 @@ class systemParameter:
         UUCSIMat = torch.from_numpy(UUCSIMat).type(torch.complex64).permute(1, 0).contiguous()
         # set UUMat as (UUnum, N_r)
         UUMat = UUCSIMat
-
+        pb_np = np.array(self.UU.powerBudgetArr).reshape(-1, 1)
+        pb_t = torch.from_numpy(pb_np).float().type(torch.complex64)
+        UUMat = torch.cat([UUMat, pb_t], dim=1)
         # DUMat: CSI_generate returned shape (N_t, DUnum); convert to (DUnum, N_t)
         DUMat = torch.from_numpy(DUMat).type(torch.complex64).permute(1, 0).contiguous()
 
@@ -185,6 +220,7 @@ class systemParameter:
         return (UUMat, DUMat, INMat, TAMat, CIMat)
 
 uu_list, du_list, in_list, ta_list, ci_list = [], [], [], [], []
+
 def generate_samples(num_samples: int, MAT):
     for i in range(num_samples):
         global uu_list, du_list, in_list, ta_list, ci_list
@@ -206,7 +242,7 @@ def generate_samples(num_samples: int, MAT):
 
 def save_unsupervised_dataset(MAT,data_path="dataset", num_samples=1000, 
                              num_trans=4, num_rece=4, noise2DU = dBm2watt(-70),
-                            noise2BS = dBm2watt(-70), alpha_SI = dB2linear(-110), 
+                            noise2BS = dBm2watt(-70), alpha_SI = dBm2watt(-110), 
                             power_BS = dBm2watt(18),
                             ):
     '''
@@ -232,10 +268,11 @@ def save_unsupervised_dataset(MAT,data_path="dataset", num_samples=1000,
         'num_samples': num_samples,
         'num_trans': num_trans,
         'num_rece': num_rece,
-        'noise2DU': noise2DU,
-        'noise2BS_dBm': noise2BS,
-        'alpha_SI_dB': alpha_SI,
-        'power_BS': power_BS
+        # 单位均为瓦 (W) / 线性值
+        'noise2DU_W': noise2DU,
+        'noise2BS_W': noise2BS,
+        'alpha_SI_linear': alpha_SI,
+        'power_BS_W': power_BS
     }
     torch.save(data_info, os.path.join(data_path, "data_info.pt"))
     
@@ -245,6 +282,26 @@ def save_unsupervised_dataset(MAT,data_path="dataset", num_samples=1000,
     
     return data
 
+def printDataSamples(system):
+    print("系统参数：")
+    system.BS.info()
+    print("TA参数：")
+    system.TA.info()
+    print("IN参数：")
+    system.IN.info()
+    print("UU参数：")
+    system.UU.info()
+    print("DU参数：")
+    system.DU.info()
+    print("环境参数：")
+    print(f"噪声功率DU侧: {system.noise2DI},噪声功率BS侧: {system.noise2BS}, 自干扰衰减: {system.alpha_SI}")    
+    UUMat, DUMat, INMat, TAMat, CIMat = system.data_create()
+    print("生成的数据样本：")
+    print(f"UUMat shape: {UUMat.shape}",UUMat)
+    print(f"DUMat shape: {DUMat.shape}",DUMat)
+    print(f"INMat shape: {INMat.shape}",INMat)
+    print(f"TAMat shape: {TAMat.shape}",TAMat)
+    print(f"CIMat shape: {CIMat.shape}",CIMat)
 
 
 if __name__ == "__main__":
@@ -252,32 +309,49 @@ if __name__ == "__main__":
     noise2DU_dBm = -70  # dBm
     noise2BS_dBm = -70  # dBm
     alpha_SI_dB = -110  # dB
+    noise2DU = np.sqrt(dBm2watt(noise2DU_dBm))
+    noise2BS = np.sqrt(dBm2watt(noise2BS_dBm))
+    alpha_SI = dB2linear(alpha_SI_dB)
     num_trans = 4
     num_rece = 4
-    power_BS = dBm2watt(18+30)  # 基站功率预算过大
+    power_BS = dBm2watt(18)  # 基站功率约0.063W
     BSlocation_XYZ = np.array([0,20,0])
 
     ta_num = 2
-    ta_angleRange = np.array([45,135])
+    ta_angleRange = np.array([[45,75],[105,135]])
     #功率增益的平方，增益随机生成即可
-    ta_powerGainArr = np.full((ta_num),dB2linear(-30)*dB2linear(noise2BS_dBm))
-    
+    ta_powerGainArr = np.full((ta_num),np.sqrt(dBm2watt(noise2BS_dBm-30)))
+    ta_distanceRange = np.array([75,125])#此时数量级较为统一
     in_num = 2
     in_angleRange = np.array([45,135])
-    in_powerGainArr = np.full((in_num),dB2linear(20)*dB2linear(noise2BS_dBm))
+    in_powerGainArr = np.full((in_num),np.sqrt(dBm2watt(noise2BS_dBm+20)))
     
     uu_num = 4
-    uu_powerBudget = dBm2watt(5+30)#预算过大
+    uu_powerBudget = dBm2watt(5)#约为0.003W
     uu_locatRange = np.array([[0,100],[0,10],[0,100]])
     
     du_num = 4
     du_locatRange = np.array([[0,100],[0,10],[0,100]])
 
     BS = BSparameter(num_trans, num_rece, power_BS, BSlocation_XYZ)
-    TA = TAparameter(ta_num, ta_angleRange, ta_powerGainArr)
+    TA = TAparameter(ta_num, ta_angleRange, ta_powerGainArr, ta_distanceRange, setAngle=False)
     IN = INparameter(in_num, in_angleRange, in_powerGainArr)
     UU = UUparameter(uu_num, uu_powerBudget, uu_locatRange)
     DU = DUparameter(du_num, du_locatRange)
     system = systemParameter(BS,TA,IN,UU,DU)
-    system.envParaSet(dBm2watt(noise2DU_dBm),dBm2watt(noise2BS_dBm),dB2linear(alpha_SI_dB),num_trans,num_rece)
-    save_unsupervised_dataset(generate_samples(10000, system.data_create()))
+    system.envParaSet(np.sqrt(dBm2watt(noise2DU_dBm)),np.sqrt(dBm2watt(noise2BS_dBm)),alpha_SI,num_trans,num_rece)
+    # 生成样本并保存，注意：将实际使用的参数传递给保存函数，避免默认参数覆盖
+    num_samples_to_generate = 10000
+    samples = generate_samples(num_samples_to_generate, system.data_create())
+    save_unsupervised_dataset(
+        samples,
+        data_path="dataset",
+        num_samples=num_samples_to_generate,
+        num_trans=num_trans,
+        num_rece=num_rece,
+        noise2DU=noise2DU,
+        noise2BS=noise2BS,
+        alpha_SI=alpha_SI,
+        power_BS=power_BS,
+    )
+    printDataSamples(system)
