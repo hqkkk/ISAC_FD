@@ -2,6 +2,7 @@ import os
 import torch
 import numpy as np
 import pandas as pd
+import data_create as dc
 
 
 def describe_tensor(name, tensor, max_items=6):
@@ -195,101 +196,177 @@ def save_samples_to_excel(data, info, num_samples, n_show, desc_map, out_path):
 
 
 def main():
-    print("=== readout.py: 从 data_create 保存的文件中读取前10个样本并显示说明 ===")
+    print("=== readout.py: 根据 data_create 参数生成 10 个样本并保存到 Excel ===")
     base_dir = os.path.dirname(__file__)
-    data_dir = os.path.join(base_dir, "dataset")
 
-    try:
-        data, info = load_dataset(data_dir=data_dir)
-    except FileNotFoundError as e:
-        print(e)
-        return
+    # 按 data_create 中的参数设置创建 systemParameter
+    # 这些默认值可以根据需要调整
+    noise2DU_dBm = -70
+    noise2BS_dBm = -70
+    alpha_SI_dB = -110
+    num_trans = 4
+    num_rece = 4
+    # 与 data_create.py 保持一致：基站功率使用 dBm2watt(18)
+    power_BS = dc.dBm2watt(18)
+    BSlocation_XYZ = np.array([0, 20, 0])
 
-    # 打印 data_info（如果存在）
-    if info is not None:
-        print("\n--- data_info 内容（元数据）---")
-        if isinstance(info, dict):
-            for k, v in info.items():
-                print(f"{k}: {v}")
-        else:
-            print(info)
-    else:
-        print("\n未找到 data_info（元数据）。")
+    ta_num = 2
+    ta_angleRange = np.array([[45,75],[105,135]])
+    # 与 data_create.py 保持一致：ta_powerGainArr 使用 sqrt(dBm2watt(noise2BS_dBm - 30))
+    ta_powerGainArr = np.full((ta_num,), np.sqrt(dc.dBm2watt(noise2BS_dBm - 30)))
+    ta_distanceRange = np.array([75,125])#此时数量级较为统一
 
-    # data 应该是一个字典，包含 'UUMat','DUMat','INMat','TAMat','CIMat' 等
-    if not isinstance(data, dict):
-        print("数据文件格式不是字典，无法按预期读取。内容预览:")
-        print(type(data))
-        return
+    in_num = 2
+    in_angleRange = np.array([45, 135])
+    # 与 data_create.py 保持一致：in_powerGainArr 使用 sqrt(dBm2watt(noise2BS_dBm + 20))
+    in_powerGainArr = np.full((in_num,), np.sqrt(dc.dBm2watt(noise2BS_dBm + 20)))
+    in_distanceRange = np.array([75,125])#此时数量级较为统一
 
-    expected_keys = ['UUMat', 'DUMat', 'INMat', 'TAMat', 'CIMat']
-    present_keys = list(data.keys())
-    print(f"\n数据文件包含键: {present_keys}")
+    uu_num = 4
+    # 与 data_create.py 保持一致：uu_powerBudget = dBm2watt(5)
+    uu_powerBudget = dc.dBm2watt(5)
+    uu_locatRange = np.array([[0, 100], [0, 10], [0, 100]])
 
-    # 确定样本数量：尽量以 UUMat 的第0维为准
-    num_samples = None
-    for k in expected_keys:
-        if k in data and isinstance(data[k], torch.Tensor):
-            if data[k].ndim >= 1:
-                num_samples = data[k].shape[0]
-                break
+    du_num = 4
+    du_locatRange = np.array([[0, 100], [0, 10], [0, 100]])
 
-    if num_samples is None:
-        # 后备：从任意 tensor 的第一维推断
-        for v in data.values():
-            if isinstance(v, torch.Tensor) and v.ndim >= 1:
-                num_samples = v.shape[0]
-                break
+    BS = dc.BSparameter(num_trans, num_rece, power_BS, BSlocation_XYZ)
+    TA = dc.TAparameter(ta_num, ta_angleRange, ta_powerGainArr, ta_distanceRange)
+    IN = dc.INparameter(in_num, in_angleRange, in_powerGainArr, in_distanceRange)
+    UU = dc.UUparameter(uu_num, uu_powerBudget, uu_locatRange)
+    DU = dc.DUparameter(du_num, du_locatRange)
+    system = dc.systemParameter(BS, TA, IN, UU, DU)
+    # 与 data_create.py 保持一致：noise2* 在某处被使用为 sqrt(dBm2watt(...))，因此这里传入相同的值
+    system.envParaSet(np.sqrt(dc.dBm2watt(noise2DU_dBm)), np.sqrt(dc.dBm2watt(noise2BS_dBm)), dc.dB2linear(alpha_SI_dB), num_trans, num_rece)
 
-    if num_samples is None:
-        num_samples = 1
+    n_samples = 10
+    samples = []
+    for i in range(n_samples):
+        # system.data_create 内会随机生成场景
+        UUMat, DUMat, INMat, TAMat, CIMat = system.data_create()
+        # 拷贝参数字典，避免后续随机更新覆盖之前的样本记录
+        def copy_params(d):
+            out = {}
+            for k, v in d.items():
+                try:
+                    if isinstance(v, np.ndarray):
+                        out[k] = v.copy()
+                    else:
+                        out[k] = v
+                except Exception:
+                    out[k] = v
+            return out
 
-    print(f"检测到样本数量 (推断): {num_samples}")
+        samples.append({
+            'UUMat': UUMat.detach().cpu().numpy(),
+            'DUMat': DUMat.detach().cpu().numpy(),
+            'INMat': INMat.detach().cpu().numpy(),
+            'TAMat': TAMat.detach().cpu().numpy(),
+            'CIMat': CIMat.detach().cpu().numpy(),
+            'system': {
+                'num_trans': num_trans,
+                'num_rece': num_rece,
+                'powerBudget': power_BS,
+                'location': BSlocation_XYZ.reshape(-1, 1)
+            },
+            'TA_params': copy_params(TA.__dict__),
+            'IN_params': copy_params(IN.__dict__),
+            'UU_params': copy_params(UU.__dict__),
+            'DU_params': copy_params(DU.__dict__),
+            'env': {
+                # 与 data_create.py 对齐：噪声使用 sqrt(dBm2watt(...))
+                'noise2DU_W': np.sqrt(dc.dBm2watt(noise2DU_dBm)),
+                'noise2BS_W': np.sqrt(dc.dBm2watt(noise2BS_dBm)),
+                'alpha_SI_linear': dc.dB2linear(alpha_SI_dB)
+            }
+        })
 
-    n_show = min(10, int(num_samples))
-    print(f"\n将显示前 {n_show} 个样本的详细信息（若可用）\n")
+    # 写入 Excel
+    out_file = os.path.join(base_dir, 'generated_10_samples.xlsx')
+    with pd.ExcelWriter(out_file, engine='xlsxwriter') as writer:
+        # summary sheet
+        # 与 data_create.py 对齐：噪声项使用 sqrt(dBm2watt(...))，alpha 使用线性值
+        summary = {
+            'num_samples': n_samples,
+            'num_trans': num_trans,
+            'num_rece': num_rece,
+            'power_BS_W': power_BS,
+            'noise2DU_W': np.sqrt(dc.dBm2watt(noise2DU_dBm)),
+            'noise2BS_W': np.sqrt(dc.dBm2watt(noise2BS_dBm)),
+            'alpha_SI_linear': dc.dB2linear(alpha_SI_dB)
+        }
+        pd.DataFrame(list(summary.items()), columns=['key', 'value']).to_excel(writer, sheet_name='Summary', index=False)
 
-    # 对每个样本，打印键的含义、shape、dtype 和预览
-    desc_map = {
-        'UUMat': 'UU到BS信道矩阵（每个样本：UUnum × N_r）——上行用户到基站接收天线的 CSI',
-        'DUMat': 'BS到DU信道矩阵（每个样本：DUnum × N_t）——基站发射到下行用户的 CSI',
-        'INMat': '干扰源参数矩阵（每个样本：INnum × 2）——列: [angle, powerGain]（以复数保存）',
-        'TAMat': '目标参数矩阵（每个样本：TAnum × 2）——列: [angle, powerGain]（以复数保存）',
-        'CIMat': 'UU与DU之间的互相干扰CSI矩阵（每个样本：UUnum × DUnum）'
-    }
+        for idx, s in enumerate(samples):
+            sheet = f"Sample_{idx+1}"
+            row = 0
+            # system params
+            pd.DataFrame(["系统参数"]).to_excel(writer, sheet_name=sheet, startrow=row, index=False, header=False)
+            row += 1
+            pd.DataFrame(list(s['system'].items()), columns=['key', 'value']).to_excel(writer, sheet_name=sheet, startrow=row, index=False)
+            row += len(s['system']) + 2
 
-    for i in range(n_show):
-        print(f"{'='*60}\n样本 {i+1} (index {i}):\n{'-'*60}")
-        for k in present_keys:
-            # 跳过不是 tensor 的值（例如 noise 参数），但也打印说明
-            v = data[k]
-            if isinstance(v, torch.Tensor):
-                # 如果第0维是样本维，则取该样本，否则直接使用
-                if v.ndim >= 1 and v.shape[0] == num_samples:
-                    sample_v = v[i]
-                else:
-                    # 不是以样本为首维，直接当作全局项显示
-                    sample_v = v
-                print(f"\n{k}: {desc_map.get(k, '')}")
-                describe_tensor(k, sample_v)
-            else:
-                # 不是 tensor 的，可能是噪声或标量参数
-                if isinstance(v, (int, float, str)):
-                    print(f"\n{k}: (标量) {v}")
-                else:
-                    print(f"\n{k}: (非张量类型，类型={type(v)})")
-                    try:
-                        print(v)
-                    except:
-                        pass
+            # TA/IN/UU/DU params
+            pd.DataFrame(["TA参数"]).to_excel(writer, sheet_name=sheet, startrow=row, index=False, header=False)
+            row += 1
+            try:
+                pd.DataFrame(list(s['TA_params'].items()), columns=['key', 'value']).to_excel(writer, sheet_name=sheet, startrow=row, index=False)
+                row += len(s['TA_params']) + 1
+            except Exception:
+                pass
 
-    print('\n完成：已打印所选样本的基本信息与预览。')
-    # 将前 n_show 个样本保存为 Excel（完整内容）
-    out_file = os.path.join(base_dir, 'dataset_samples.xlsx')
-    try:
-        save_samples_to_excel(data, info, num_samples, n_show, desc_map, out_file)
-    except Exception as e:
-        print(f"保存到 Excel 时出错: {e}")
+            pd.DataFrame(["IN参数"]).to_excel(writer, sheet_name=sheet, startrow=row, index=False, header=False)
+            row += 1
+            try:
+                pd.DataFrame(list(s['IN_params'].items()), columns=['key', 'value']).to_excel(writer, sheet_name=sheet, startrow=row, index=False)
+                row += len(s['IN_params']) + 1
+            except Exception:
+                pass
+
+            pd.DataFrame(["UU参数"]).to_excel(writer, sheet_name=sheet, startrow=row, index=False, header=False)
+            row += 1
+            try:
+                pd.DataFrame(list(s['UU_params'].items()), columns=['key', 'value']).to_excel(writer, sheet_name=sheet, startrow=row, index=False)
+                row += len(s['UU_params']) + 1
+            except Exception:
+                pass
+
+            pd.DataFrame(["DU参数"]).to_excel(writer, sheet_name=sheet, startrow=row, index=False, header=False)
+            row += 1
+            try:
+                pd.DataFrame(list(s['DU_params'].items()), columns=['key', 'value']).to_excel(writer, sheet_name=sheet, startrow=row, index=False)
+                row += len(s['DU_params']) + 2
+            except Exception:
+                pass
+
+            # env
+            pd.DataFrame(["环境参数"]).to_excel(writer, sheet_name=sheet, startrow=row, index=False, header=False)
+            row += 1
+            pd.DataFrame(list(s['env'].items()), columns=['key', 'value']).to_excel(writer, sheet_name=sheet, startrow=row, index=False)
+            row += len(s['env']) + 2
+
+            # Channel matrices: write real and imag separately
+            def write_complex_matrix(name, mat):
+                nonlocal row
+                mat = np.array(mat)
+                real_df = pd.DataFrame(mat.real)
+                imag_df = pd.DataFrame(mat.imag)
+                pd.DataFrame([f"{name} (real)"]).to_excel(writer, sheet_name=sheet, startrow=row, index=False, header=False)
+                row += 1
+                real_df.to_excel(writer, sheet_name=sheet, startrow=row, index=False)
+                row += len(real_df) + 1
+                pd.DataFrame([f"{name} (imag)"]).to_excel(writer, sheet_name=sheet, startrow=row, index=False, header=False)
+                row += 1
+                imag_df.to_excel(writer, sheet_name=sheet, startrow=row, index=False)
+                row += len(imag_df) + 2
+
+            write_complex_matrix('UUMat', s['UUMat'])
+            write_complex_matrix('DUMat', s['DUMat'])
+            write_complex_matrix('INMat', s['INMat'])
+            write_complex_matrix('TAMat', s['TAMat'])
+            write_complex_matrix('CIMat', s['CIMat'])
+
+    print(f"已生成并保存 {n_samples} 个样本到 {out_file}")
 
 
 if __name__ == '__main__':
