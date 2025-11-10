@@ -325,7 +325,8 @@ if __name__ == "__main__":
     in_num = 2
     in_angleRange = np.array([45,135])
     in_powerGainArr = np.full((in_num),np.sqrt(dBm2watt(noise2BS_dBm+20)))
-    
+    in_distanceRange = np.array([75,125])
+
     uu_num = 4
     uu_powerBudget = dBm2watt(5)#约为0.003W
     uu_locatRange = np.array([[0,100],[0,10],[0,100]])
@@ -335,7 +336,7 @@ if __name__ == "__main__":
 
     BS = BSparameter(num_trans, num_rece, power_BS, BSlocation_XYZ)
     TA = TAparameter(ta_num, ta_angleRange, ta_powerGainArr, ta_distanceRange, setAngle=False)
-    IN = INparameter(in_num, in_angleRange, in_powerGainArr)
+    IN = INparameter(in_num, in_angleRange, in_powerGainArr, in_distanceRange, setAngle=False)
     UU = UUparameter(uu_num, uu_powerBudget, uu_locatRange)
     DU = DUparameter(du_num, du_locatRange)
     system = systemParameter(BS,TA,IN,UU,DU)
